@@ -134,16 +134,16 @@ For each tool, describe the specific failure mode you're handling and what the a
 
 Write out what a full user interaction looks like from start to finish — tool call by tool call. Use a specific example query.
 
+**What FitFindr does:** FitFindr is a secondhand shopping agent that takes a natural-language style request, searches mock listings (filtering on fields like `title`, `description`, `style_tags`, `size`, `price`, and `category`), picks the best match, then suggests how to style it with the user's existing wardrobe. Each successful search triggers `suggest_outfit`, which is then passed to `create_fit_card` for a shareable caption. If `search_listings` returns no matches, the agent tells the user what to adjust (budget, size, keywords) and stops — it never calls downstream tools with empty input.
+
 **Example user query:** "I'm looking for a vintage graphic tee under $30. I mostly wear baggy jeans and chunky sneakers. What's out there and how would I style it?"
 
-**Step 1:**
-<!-- What does the agent do first? Which tool is called? With what input? -->
+**Step 1 — Search:** The agent parses the query and calls `search_listings("vintage graphic tee", max_price=30.0)`. The tool loads listings via `load_listings()` and filters against `title`, `description`, `style_tags`, `category`, `price`, and other fields. It returns 3 matching tops sorted by relevance — e.g. "Vintage Band Tee — Faded Grey" ($19, Depop), "Graphic Tee — 2003 Tour Bootleg Style" ($24, Depop), and "Y2K Baby Tee — Butterfly Print" ($18, Depop). The agent selects the top result: **Vintage Band Tee — Faded Grey — $19, Depop, fair condition** (`lst_033`).
 
-**Step 2:**
-<!-- What happens next? What was returned from step 1? What tool is called now? -->
+**Step 2 — Suggest outfit:** Using the selected listing and the user's wardrobe (loaded with `get_example_wardrobe()` for testing — 10 items including baggy jeans and chunky sneakers), the agent calls `suggest_outfit(new_item=<band tee>, wardrobe=<user's wardrobe>)`. The tool matches the new tee against wardrobe items by `category`, `colors`, and `style_tags`. It returns: *"Pair this with your baggy straight-leg jeans and chunky white sneakers for an easy streetwear look. Roll the sleeves once and half-tuck the front for shape — the faded grey plays well against dark-wash denim."*
 
-**Step 3:**
-<!-- Continue until the full interaction is complete -->
+**Step 3 — Fit card:** The agent calls `create_fit_card(outfit=<suggestion from step 2>, new_item=<band tee>)`. The tool turns the outfit suggestion into a short social-style caption. It returns: *"thrifted this faded band tee off depop for $19 and honestly it was made for my baggy jeans 🖤 full look in my stories"*
 
-**Final output to user:**
-<!-- What does the user actually see at the end? -->
+**Error path:** If `search_listings` returns an empty list (e.g. `search_listings("designer silk blouse", max_price=10.0)`), the agent responds with something like *"Nothing matched that search — try raising your budget, loosening the size filter, or broadening the style keywords"* and does **not** call `suggest_outfit` or `create_fit_card`.
+
+**Final output to user:** A single response combining all three steps: the top listing details (title, price, platform, condition), the styling suggestion referencing specific wardrobe pieces, and the ready-to-post fit card caption.
