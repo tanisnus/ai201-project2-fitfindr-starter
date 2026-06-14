@@ -20,6 +20,77 @@ Usage (once implemented):
 
 from tools import search_listings, suggest_outfit, create_fit_card
 
+import re
+
+
+SEARCH_ERROR = (
+    "Nothing matched that search — try raising your budget, loosening the "
+    "size filter, or broadening your style keywords."
+)
+
+FIT_CARD_ERROR = (
+    "Found your item and here's how to style it — but I couldn't generate a "
+    "fit card caption. The outfit suggestion or listing data may be incomplete."
+)
+
+
+def _parse_query(query: str) -> dict | None:
+    """Extract description, optional size, and optional max_price from a user query."""
+    text = query.strip()
+    if not text:
+        return None
+
+    working = text
+    size = None
+    max_price = None
+
+    size_match = re.search(
+        r"\b(?:in\s+)?size\s*[:\s]?\s*([A-Za-z0-9/]+)", working, re.IGNORECASE
+    )
+    if size_match:
+        size = size_match.group(1).upper()
+        working = working[: size_match.start()] + working[size_match.end() :]
+
+    price_match = re.search(
+        r"(?:under|below|max(?:imum)?|less\s+than)\s*\$?\s*(\d+(?:\.\d+)?)",
+        working,
+        re.IGNORECASE,
+    )
+    if price_match:
+        max_price = float(price_match.group(1))
+        working = working[: price_match.start()] + working[price_match.end() :]
+
+    working = re.sub(
+        r"^(?:i(?:'m)?\s+)?(?:looking\s+for|searching\s+for|find(?:\s+me)?|want|need)\s+",
+        "",
+        working,
+        flags=re.IGNORECASE,
+    )
+    working = re.sub(r"^(?:a|an)\s+", "", working, flags=re.IGNORECASE)
+    working = re.sub(r"\s+", " ", working).strip()
+
+    description = working or text
+    return {"description": description, "size": size, "max_price": max_price}
+
+
+def _is_fit_card_error(caption: str) -> bool:
+    """True when create_fit_card returned an error message instead of a caption."""
+    lower = caption.lower()
+    return "couldn't generate" in lower or "couldn't build" in lower
+
+
+def _format_listing(item: dict) -> str:
+    """Format a listing dict for display."""
+    brand = item.get("brand")
+    brand_line = f"Brand: {brand}\n" if brand else ""
+    return (
+        f"{item['title']}\n"
+        f"${item['price']:.2f} on {item['platform']}\n"
+        f"Size: {item['size']} | Condition: {item['condition']}\n"
+        f"{brand_line}"
+        f"{item['description']}"
+    )
+
 
 # ── session state ─────────────────────────────────────────────────────────────
 
@@ -92,9 +163,46 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     Before writing code, complete the Planning Loop and State Management sections
     of planning.md — your implementation should match what you described there.
     """
-    # TODO: implement the planning loop
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+
+    parsed = _parse_query(query)
+    if not parsed or not parsed.get("description"):
+        session["error"] = "Please include what you're looking for in your search."
+        return session
+
+    session["parsed"] = parsed
+
+    results = search_listings(
+        description=parsed["description"],
+        size=parsed.get("size"),
+        max_price=parsed.get("max_price"),
+    )
+    session["search_results"] = results
+
+    if not results:
+        session["error"] = SEARCH_ERROR
+        return session
+
+    session["selected_item"] = results[0]
+
+    session["outfit_suggestion"] = suggest_outfit(
+        new_item=session["selected_item"],
+        wardrobe=session["wardrobe"],
+    )
+
+    wardrobe_items = session["wardrobe"].get("items") or []
+    if not wardrobe_items:
+        return session
+
+    fit_card = create_fit_card(
+        outfit=session["outfit_suggestion"],
+        new_item=session["selected_item"],
+    )
+    if _is_fit_card_error(fit_card):
+        session["error"] = FIT_CARD_ERROR
+        return session
+
+    session["fit_card"] = fit_card
     return session
 
 
