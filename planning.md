@@ -371,3 +371,4 @@ The agent calls `create_fit_card(outfit=<suggestion from step 2>, new_item=<band
 <!-- What does the user actually see at the end? -->
 
 A single response combining all three steps: the top listing details (title, price, platform, condition), the styling suggestion referencing specific wardrobe pieces, and the ready-to-post fit card caption.
+
